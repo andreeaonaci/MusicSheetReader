@@ -217,6 +217,8 @@ uchar label = 0;
 int newLabel = 0;
 
 Mat connectedLabeling(Mat src) {
+    label = 0;
+    newLabel = 0;
     Mat labels = Mat::zeros(src.size(), CV_32SC1);
     Mat colorImg(src.rows, src.cols, CV_8UC3, Scalar(255, 255, 255));
     std::vector<std::vector<int>> edges(1);
@@ -375,7 +377,7 @@ void removeGreaterObjects(Mat labels, int threshold) {
 
         cout << "Area for label " << label << ": " << area << endl;
 
-        if (area < 25 || area > 50) {
+        if (area < 23 || area > 50) {
             for (int i = 0; i < labels.rows; ++i) {
                 for (int j = 0; j < labels.cols; ++j) {
                     if (labels.at<int>(i, j) == label) {
@@ -390,6 +392,7 @@ void removeGreaterObjects(Mat labels, int threshold) {
 
 void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, vector<pair<Point, int>>& sortedLabels, Mat image) {
     sortedLabels.clear(); 
+    cout << "Sunt aici";
     Mat_<Vec3b> srcColor = image.clone();
     vector<int> visitedLabels(newLabel + 1, 0);
 
@@ -397,19 +400,13 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
         for (int j = 0; j < labels.cols; ++j) {
             int label = labels.at<int>(i, j);
             if (label != 0 && visitedLabels[label] == 0) {
-                //Point center = calculateCenterOfMass(labels, label, staffs);
                 Point center = calculateCenterOfMassFromPoint(labels, Point(j, i), label);
-                //cout << "Center of mass for label " << label << ": " << center << endl;
-                //circle(srcColor, center, 3, Scalar(0, 0, 255), FILLED);
-                //imshow("Detected Notes", srcColor);
-                //waitKey(0);
                 sortedLabels.push_back({ center, label });
                 visitedLabels[label] = 1;
             }
         }
     }
 
-    // Define a custom comparator function to compare pairs based on the x-coordinate first, then y-coordinate
     auto comparator = [](const pair<Point, int>& a, const pair<Point, int>& b) {
         if (a.first.y - 45 < b.first.y && a.first.y + 45 > b.first.y) {
             return a.first.x < b.first.x;
@@ -419,7 +416,6 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
         }
         };
 
-    // Sort the labels based on their center of mass coordinates using the custom comparator
     sort(sortedLabels.begin(), sortedLabels.end(), comparator);
 
     vector<int> extractedLabels;
@@ -427,7 +423,6 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
         extractedLabels.push_back(pair.second);
     }
 
-    // Display the sorted labels
     for (int i = 0; i < extractedLabels.size(); i++) {
         Point center = sortedLabels[i].first;
         cout << "Center of mass for label " << extractedLabels[i] << ": " << center << endl;
@@ -435,8 +430,6 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
         imshow("Detected Notes", srcColor);
         waitKey(0);
     }
-    //imshow("Detected Notes", srcColor);
-    //waitKey(0);
 }
 
 vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat image) {
@@ -447,10 +440,9 @@ vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat im
     removeGreaterObjects(labels, 100);
 
     sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image);
+
     int staffNumber = 0;
-    for (int i = 1
-        
-        ; i < sortedLabels.size(); i++) {
+    for (int i = 0; i < sortedLabels.size(); i++) {
         Point center = sortedLabels[i].first;
         int offset = 3;
         int tolerance = 5;
@@ -554,6 +546,7 @@ vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat im
 		}
         else
             if (center.y > staffs[staffNumber].lines[4].y + offset) {
+                cout << "Note center " << center.x << endl;
 				Note note;
 				note.name = D;
 				note.octave = 4;
@@ -562,7 +555,7 @@ vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat im
                 notes.push_back(note);
             }
         else
-            if (center.y > staffs[staffNumber].lines[4].y + 3 * offset) {
+            if (center.y > staffs[staffNumber].lines[4].y + 20 * offset) {
                 Note note;
                 note.name = C;
                 note.octave = 4;
@@ -618,17 +611,16 @@ void adjustNoteTails(Mat& binaryImage, int threshold, int adjustment) {
     }
 }
 
-void writeNotesToFile(const vector<Note>& notes) {
+void writeNotesAndDurationsToFile(const vector<Note>& notes) {
     ofstream outputFile("notes.txt");
     if (!outputFile.is_open()) {
         cout << "Error opening file for writing notes." << endl;
         return;
     }
 
-    for (const auto& note : notes) {
-        // Convert NoteName enum to corresponding character
+    for (int i = 0; i < notes.size(); ++i) {
         char noteChar;
-        switch (note.name) {
+        switch (notes[i].name) {
         case C: noteChar = 'C'; break;
         case D: noteChar = 'D'; break;
         case E: noteChar = 'E'; break;
@@ -638,17 +630,215 @@ void writeNotesToFile(const vector<Note>& notes) {
         case B: noteChar = 'B'; break;
         }
 
-        // Write note information to file
-        outputFile << noteChar << note.octave << "4" << endl;
+        outputFile << noteChar << notes[i].octave;
+
+        outputFile << " ";
+        switch (notes[i].duration) {
+        case quarter: outputFile << "4"; break;
+        case eighth: outputFile << "8"; break;
+        }
+
+        outputFile << endl;
     }
 
     outputFile.close();
-    cout << "Notes written to file successfully." << endl;
+    cout << "Notes and durations written to file successfully." << endl;
+}
+
+vector<pair<int, int>> calculateAreaForDuration(Mat labels, Mat labelsNotes) {
+    vector<pair<int, int>> areas;
+    for (int label = 1; label <= newLabel; ++label) {
+        int area = 0;
+
+        // Check if any part of labelsNotes overlaps with the current label in labels
+        bool overlap = false;
+
+        for (int i = 0; i < labels.rows; ++i) {
+            for (int j = 0; j < labels.cols; ++j) {
+                if (labels.at<int>(i, j) == label && labelsNotes.at<int>(i, j) != 0) {
+                    overlap = true;
+                    area++;
+                }
+            }
+        }
+
+        areas.push_back({ label, area });
+
+        if (overlap) {
+            cout << "Area for label " << label << " overlapped with notes: " << area << endl;
+            if ((area > 200 || area < 15) || (area > 90 && area < 100)) {
+                cout << "Adjusting pixel values for label " << label << endl;
+				for (int i = 0; i < labels.rows; ++i) {
+					for (int j = 0; j < labels.cols; ++j) {
+						if (labels.at<int>(i, j) == label) {
+							labels.at<int>(i, j) = 0;
+						}
+					}
+				}
+			}
+        }
+        else {
+            cout << "No overlap found for label " << label << endl;
+            
+            for (int i = 0; i < labels.rows; ++i) {
+                for (int j = 0; j < labels.cols; ++j) {
+                    if (labels.at<int>(i, j) == label) {
+                        labels.at<int>(i, j) = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    return areas;
+}
+
+vector<Note> identifyDurations(const Mat& labels, const vector<Staff>& staffs, Mat image, const Mat& labelsNotes, vector<Note> notes) {
+    vector<Note> notesClone = notes;
+    vector<Duration> durations;
+    vector<pair<Point, int>> sortedLabels;
+
+    vector<pair<int, int>> areas = calculateAreaForDuration(labels, labelsNotes);
+    cout << "am ajuns aici" << endl;
+    sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image);
+
+    //extract sorted labels
+    vector<int> extractedLabels;
+    cout << sortedLabels.size() << endl;
+    for (const auto& pair : sortedLabels) {
+        extractedLabels.push_back(pair.second);
+    }
+
+    // Display the sorted labels
+    for (int i = 0; i < extractedLabels.size(); i++) {
+        Point center = sortedLabels[i].first;
+        //cout << "Center of mass for label " << extractedLabels[i] << ": " << center << endl;
+        circle(image, center, 3, Scalar(0, 0, 255), FILLED);
+        imshow("Detected Notes", image);
+        waitKey(0);
+    }
+
+    auto isWhite = [](int pixel) { return pixel == 255; };
+
+    int tolerance = 10;
+
+    // for (int i = 0; i < extractedLabels.size(); i++) {
+    //     int label = extractedLabels[i];
+
+    //     int y = 0;
+
+    //     for (int iN = 0; iN < labelsNotes.rows; iN++) {
+    //         for (int jN = 0; jN < labelsNotes.cols; jN++) {
+    //             if (labelsNotes.at<int>(iN, jN) == label) {
+    //                 y = jN;
+             //	}
+             //}
+    //     }
+
+    //     circle(image, Point(label, y), 3, Scalar(0, 255, 0), FILLED);
+    //     imshow("Detected Labels", image);
+    //     waitKey(0);
+
+    //     int upCount = 0;
+    //     int j = y - 1;
+    //     while (j >= 0 && !isWhite(labels.at<int>(j, label))) {
+    //         upCount++;
+    //         j--;
+    //     }
+
+    //     int downCount = 0;
+    //     j = y + 1;
+    //     while (j < labels.rows && !isWhite(labels.at<int>(j, label))) {
+    //         downCount++;
+    //         j++;
+    //     }
+
+    //     int rightCount = 0;
+    //     j = label + 1; 
+    //     bool firstWhitePixelFound = false;
+    //     while (j < labels.cols && (!firstWhitePixelFound || !isWhite(labels.at<int>(y, j)))) {
+    //         if (!firstWhitePixelFound && isWhite(labels.at<int>(y, j))) {
+    //             firstWhitePixelFound = true;
+    //             break;
+    //         }
+    //         if (firstWhitePixelFound) {
+    //             rightCount++;
+    //         }
+    //         j++; // Increment the column index
+    //     }
+
+    //     cout << "Up count: " << upCount << ", Down count: " << downCount << ", Right count: " << rightCount << "Label value" << labels.at<int>(j, label) << endl;
+    //     circle(image, Point(label, y), 3, Scalar(0, 255, 0), FILLED);
+    //     imshow("Detected Labels", image);
+    //     waitKey(0);
+
+    //     if (upCount > tolerance) {
+    //         if (rightCount > tolerance) {
+    //             int thresholdColumns = 10;
+    //             bool hasNonWhiteInThreshold = false;
+    //             for (int k = 1; k <= thresholdColumns; ++k) {
+    //                 if (!isWhite(labels.at<int>(y + k, label))) {
+    //                     hasNonWhiteInThreshold = true;
+    //                     break;
+    //                 }
+    //             }
+
+    //             if (hasNonWhiteInThreshold) {
+    //                 durations.push_back(eighth);
+    //             }
+    //             else {
+    //                 durations.push_back(quarter);
+    //             }
+    //         }
+    //         else {
+    //             durations.push_back(quarter);
+    //         }
+    //     }
+    //     else {
+    //         durations.push_back(quarter);
+    //     }
+
+    // }
+
+    // for (int i = 0; i < durations.size(); i++) {
+    //     cout << "Duration " << i << ": " << durations[i] << endl;
+    // }
+
+    cout << "Areas size: " << areas.size() << endl;
+
+
+    for (int i = 0; i < areas.size(); i++) {
+        cout << "Area " << i << ": " << areas[i].second << endl;
+        if (areas[i].second != 0) {
+            if (areas[i].second > 25 && areas[i].second < 45) {
+                for (int label = 0; label < notesClone.size(); label++) {
+                    if (areas[i].first == label) {
+						notesClone[label].duration = quarter;
+						durations.push_back(quarter);
+					}
+                }
+            }
+            else {
+                for (int label = 0; label < notesClone.size(); label++) {
+                    if (areas[i].first == label) {
+                        notesClone[label].duration = eighth;
+                        durations.push_back(eighth);
+                    }
+                }
+            }
+        }
+	}
+
+    for (int i = 0; i < durations.size(); i++) {
+		cout << "Duration " << i << ": " << durations[i] << endl;
+    }
+
+	return notesClone;
 }
 
 int main() {
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
-    Mat image1 = imread("vioara_mica.bmp", 0);
+    Mat image1 = imread("varianta_noua.png", 0);
 
     Mat image;
 
@@ -708,9 +898,22 @@ int main() {
 
     vector<Note> notes = identifyNotes(labels, staffs, colorImg);
 
+    Mat labelsDur = connectedLabeling(dilatedSrc);
 
+    cout << "Connected labeling for durations" << endl;
 
-    writeNotesToFile(notes);
+    Mat colorImgForDurations(dilatedSrc.rows, dilatedSrc.cols, CV_8UC3, Scalar(255, 255, 255));
+    for (int i = 0; i < dilatedSrc.rows; i++) {
+        for (int j = 0; j < dilatedSrc.cols; j++) {
+            if (labelsDur.at<int>(i, j) != 0) {
+                colorImgForDurations.at<Vec3b>(i, j) = Vec3b(rand() % 256, rand() % 256, rand() % 256);
+            }
+        }
+    }
+
+    vector<Note> durations = identifyDurations(labelsDur, staffs, colorImgForDurations, labels, notes);
+
+    writeNotesAndDurationsToFile(notes);
 
     return 0;
 }
