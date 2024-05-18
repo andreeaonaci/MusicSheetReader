@@ -44,16 +44,16 @@ vector<Staff> detectStaffs(Mat image, bool print) {
         horizontalProjection[i] = blackPixelCount;
     }
 
-    cout << image.rows << " " << image.cols << endl;
+    //cout << image.rows << " " << image.cols << endl;
 
     std::vector<int> candidateLines; //lines that are candidates for staff lines
 
     for (int i = 0; i < horizontalProjection.size(); ++i) {
         if (horizontalProjection[i] > image.cols / 2) {
-            cout << "Candidate line at y = " << i << endl;  
-			candidateLines.push_back(i);
+            cout << "Candidate line at y = " << i << endl;
+            candidateLines.push_back(i);
         }
-	}
+    }
 
     vector<Staff> staffs;
     Staff staff;
@@ -65,16 +65,16 @@ vector<Staff> detectStaffs(Mat image, bool print) {
         line_candidate.y = candidateLines[i];
         if (candidateLines[i] - candidateLines[i - 1] != 1)
             staff.lines.push_back({ line_candidate });
-        
+
         int j = i + 1;
         while (j < candidateLines.size() && candidateLines[j] - candidateLines[j - 1] == 1) {
             j++;
         }
 
         if (staff.lines.size() == 5) {
-			staffs.push_back(staff);
-			staff.lines.clear();
-		}
+            staffs.push_back(staff);
+            staff.lines.clear();
+        }
     }
 
     if (print) {
@@ -92,8 +92,8 @@ vector<Staff> detectStaffs(Mat image, bool print) {
                 line(result, Point(0, staffs[i].lines[j].y), Point(result.cols, staffs[i].lines[j].y), Scalar(0, 255, 0), 2);
             }
         }
-        imshow("Detected Staffs", result);
-        waitKey(0);
+        //imshow("Detected Staffs", result);
+        //waitKey(0);
     }
 
 
@@ -289,29 +289,110 @@ Mat connectedLabeling(Mat src) {
         }
     }
 
-    std::default_random_engine gen;
-    std::uniform_int_distribution<int> d(0, 255);
-    for (int k = 2; k <= newLabel; k++) {
-        Vec3b color = Vec3b(rand() % 256, rand() % 256, rand() % 256);
-        for (int i = 1; i < src.rows - 1; i++) {
-            for (int j = 1; j < src.cols - 1; j++) {
-                if (labels.at<int>(i, j) == k)
-                    colorImg.at<Vec3b>(i, j) = color;
+    return labels;
+}
+
+int label1 = 0;
+int newlabel1 = 0;
+
+Mat connectedLabelingDur(Mat src) {
+    imshow("src", src);
+    waitKey(0);
+    Mat label1s = Mat::zeros(src.size(), CV_32SC1);
+    vector<vector<int>> edges(1);
+    int di[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+    int dj[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+
+    // First pass: label1 the components
+    for (int i = 0; i < src.rows; i++) {
+        for (int j = 0; j < src.cols; j++) {
+            if (src.at<uchar>(i, j) == 0 && label1s.at<int>(i, j) == 0) {
+                vector<int> neighbours;
+                for (int k = 0; k < 4; k++) { // Only check the 4-neighborhood initially
+                    int ni = i + di[k];
+                    int nj = j + dj[k];
+                    if (ni >= 0 && ni < src.rows && nj >= 0 && nj < src.cols && label1s.at<int>(ni, nj) > 0) {
+                        neighbours.push_back(label1s.at<int>(ni, nj));
+                    }
+                }
+                if (neighbours.empty()) {
+                    label1++;
+                    label1s.at<int>(i, j) = label1;
+                    edges.push_back(vector<int>());
+                }
+                else {
+                    int min = neighbours[0];
+                    for (int k = 1; k < neighbours.size(); k++) {
+                        if (neighbours[k] < min) {
+                            min = neighbours[k];
+                        }
+                    }
+                    label1s.at<int>(i, j) = min;
+                    for (int k = 0; k < neighbours.size(); k++) {
+                        if (neighbours[k] != min)
+                        {
+                            edges.at(min).push_back(neighbours[k]);
+                            edges.at(neighbours[k]).push_back(min);
+                        }
+
+                    }
+                }
             }
         }
     }
 
-    imshow("color", colorImg);
-    waitKey(0);
+    // Second pass: resolve equivalences
+    Mat newlabel1s(label1 + 1, 1, CV_32SC1, Scalar(0));
+    for (int i = 1; i <= label1; i++) {
+        if (newlabel1s.at<int>(i) == 0) {
+            newlabel1++;
+            queue<int> Q;
+            Q.push(i);
+            newlabel1s.at<int>(i) = newlabel1;
+            while (!Q.empty()) {
+                int q = Q.front();
+                Q.pop();
+                for (int k = 0; k < edges[q].size(); k++) {
+                    if (newlabel1s.at<int>(edges[q][k]) == 0) {
+                        newlabel1s.at<int>(edges[q][k]) = newlabel1;
+                        Q.push(edges[q][k]);
+                    }
+                }
+            }
+        }
+    }
 
-    return labels;
+    // Third pass: relabel1 the components
+    for (int i = 0; i < src.rows; i++) {
+        for (int j = 0; j < src.cols; j++) {
+            if (label1s.at<int>(i, j) != 0) {
+                label1s.at<int>(i, j) = newlabel1s.at<int>(label1s.at<int>(i, j));
+            }
+        }
+    }
+
+    //Mat colorImg1(src.rows, src.cols, CV_8UC3, Scalar(255, 255, 255));
+    //for (int k = 2; k <= newlabel1; k++) {
+    //    Vec3b color = Vec3b(rand() % 256, rand() % 256, rand() % 256);
+    //    for (int i = 1; i < src.rows - 1; i++) {
+    //        for (int j = 1; j < src.cols - 1; j++) {
+    //            if (label1s.at<int>(i, j) == k)
+    //                colorImg1.at<Vec3b>(i, j) = color;
+    //        }
+    //    }
+    //}
+
+    //imshow("colorImg1", colorImg1);
+    //waitKey(0);
+
+    return label1s;
 }
 
 Point calculateCenterOfMassFromPoint(const Mat binary, Point point, int label) {
     Mat src = binary.clone();
 
     if (point.x < 0 || point.y < 0 || point.x >= src.cols || point.y >= src.rows) {
-        return Point(-1, -1); 
+        return Point(-1, -1);
     }
 
     float totalArea = 0;
@@ -338,18 +419,16 @@ Point calculateCenterOfMassFromPoint(const Mat binary, Point point, int label) {
                 q.push(next);
                 if (next.x < point.x - 5) {
                     flag = 1;
-				}
+                }
             }
         }
     }
-    
+
     int centerX = static_cast<int>(sumX / totalArea);
-    int centerY = static_cast<int>(sumY / totalArea); 
+    int centerY = static_cast<int>(sumY / totalArea);
 
     return Point(centerX, centerY);
 }
-
-
 
 vector<int> calculateVerticalProjection(const Mat& binaryImage) {
     vector<int> verticalProjection(binaryImage.cols, 0);
@@ -377,7 +456,7 @@ void removeGreaterObjects(Mat labels, int threshold) {
 
         cout << "Area for label " << label << ": " << area << endl;
 
-        if (area < 23 || area > 50) {
+        if (area < 26 || area > 50) {
             for (int i = 0; i < labels.rows; ++i) {
                 for (int j = 0; j < labels.cols; ++j) {
                     if (labels.at<int>(i, j) == label) {
@@ -390,11 +469,11 @@ void removeGreaterObjects(Mat labels, int threshold) {
 }
 
 
-void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, vector<pair<Point, int>>& sortedLabels, Mat image) {
-    sortedLabels.clear(); 
+void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, vector<pair<Point, int>>& sortedLabels, Mat image, int labelValue) {
+    sortedLabels.clear();
     cout << "Sunt aici";
     Mat_<Vec3b> srcColor = image.clone();
-    vector<int> visitedLabels(newLabel + 1, 0);
+    vector<int> visitedLabels(labelValue + 1, 0);
 
     for (int i = 0; i < labels.rows; ++i) {
         for (int j = 0; j < labels.cols; ++j) {
@@ -408,7 +487,7 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
     }
 
     auto comparator = [](const pair<Point, int>& a, const pair<Point, int>& b) {
-        if (a.first.y - 45 < b.first.y && a.first.y + 45 > b.first.y) {
+        if (a.first.y - 100 < b.first.y && a.first.y + 100 > b.first.y) {
             return a.first.x < b.first.x;
         }
         else {
@@ -425,7 +504,6 @@ void sortLabelsByCenterOfMass(const Mat& labels, const vector<Staff>& staffs, ve
 
     for (int i = 0; i < extractedLabels.size(); i++) {
         Point center = sortedLabels[i].first;
-        cout << "Center of mass for label " << extractedLabels[i] << ": " << center << endl;
         circle(srcColor, center, 3, Scalar(0, 0, 255), FILLED);
         imshow("Detected Notes", srcColor);
         waitKey(0);
@@ -439,17 +517,31 @@ vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat im
 
     removeGreaterObjects(labels, 100);
 
-    sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image);
+    sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image, newLabel);
+
+    for (int i = 0; i < sortedLabels.size(); i++) {
+        Point center = sortedLabels[i].first;
+        cout << i << "Center of mass for label " << sortedLabels[i].second << ": " << center << endl;
+        circle(image, center, 3, Scalar(0, 0, 255), FILLED);
+        imshow("Detected Notes", image);
+        waitKey(0);
+    }
 
     int staffNumber = 0;
     for (int i = 0; i < sortedLabels.size(); i++) {
+        cout << sortedLabels.size() << endl;
         Point center = sortedLabels[i].first;
         int offset = 3;
-        int tolerance = 5;
+        int tolerance = 2;
 
-        if (center.y < staffs[staffNumber].lines[0].y - tolerance || center.y > staffs[staffNumber].lines[4].y + 2 * tolerance) {
-            staffNumber++;
-		}
+        if (staffNumber < staffs.size() - 1)
+            if (center.y < staffs[staffNumber].lines[0].y - tolerance || center.y > staffs[staffNumber + 1].lines[0].y) {
+                staffNumber++;
+            }
+            else
+                if (center.y < staffs[staffNumber].lines[0].y - tolerance) {
+                    staffNumber++;
+                }
 
         if (staffNumber == staffs.size()) {
             break;
@@ -462,113 +554,112 @@ vector<Note> identifyNotes(const Mat labels, const vector<Staff>& staffs, Mat im
             note.duration = quarter;
             note.position = 0;
             notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[0].y + offset) {
-			Note note;
-			note.name = F;
-			note.octave = 5;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else 
-        if (center.y < staffs[staffNumber].lines[1].y - offset) {
-            Note note;
-            note.name = E;
-            note.octave = 5;
-            note.duration = quarter;
-            note.position = 0;
-            notes.push_back(note);
         }
         else
-        if (center.y < staffs[staffNumber].lines[1].y + offset) {
-			Note note;
-			note.name = D;
-			note.octave = 5;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[2].y - offset) {
-			Note note;
-			note.name = C;
-			note.octave = 5;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[2].y + offset) {
-			Note note;
-			note.name = B;
-			note.octave = 4;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[3].y - offset) {
-			Note note;
-			note.name = A;
-			note.octave = 4;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[3].y + offset) {
-			Note note;
-			note.name = G;
-			note.octave = 4;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[4].y - offset) {
-			Note note;
-			note.name = F;
-			note.octave = 4;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-        if (center.y < staffs[staffNumber].lines[4].y + offset) {
-			Note note;
-			note.name = E;
-			note.octave = 4;
-			note.duration = quarter;
-			note.position = 0;
-			notes.push_back(note);
-		}
-        else
-            if (center.y > staffs[staffNumber].lines[4].y + offset) {
-                cout << "Note center " << center.x << endl;
-				Note note;
-				note.name = D;
-				note.octave = 4;
-                note.duration = quarter;
-                note.position = 0;
-                notes.push_back(note);
-            }
-        else
-            if (center.y > staffs[staffNumber].lines[4].y + 20 * offset) {
+            if (center.y < staffs[staffNumber].lines[0].y + offset) {
                 Note note;
-                note.name = C;
-                note.octave = 4;
+                note.name = F;
+                note.octave = 5;
                 note.duration = quarter;
                 note.position = 0;
                 notes.push_back(note);
             }
-            cout << staffNumber << endl;
-		}
+            else
+                if (center.y < staffs[staffNumber].lines[1].y - offset) {
+                    Note note;
+                    note.name = E;
+                    note.octave = 5;
+                    note.duration = quarter;
+                    note.position = 0;
+                    notes.push_back(note);
+                }
+                else
+                    if (center.y < staffs[staffNumber].lines[1].y + offset) {
+                        Note note;
+                        note.name = D;
+                        note.octave = 5;
+                        note.duration = quarter;
+                        note.position = 0;
+                        notes.push_back(note);
+                    }
+                    else
+                        if (center.y < staffs[staffNumber].lines[2].y - offset) {
+                            Note note;
+                            note.name = C;
+                            note.octave = 5;
+                            note.duration = quarter;
+                            note.position = 0;
+                            notes.push_back(note);
+                        }
+                        else
+                            if (center.y < staffs[staffNumber].lines[2].y + offset) {
+                                Note note;
+                                note.name = B;
+                                note.octave = 4;
+                                note.duration = quarter;
+                                note.position = 0;
+                                notes.push_back(note);
+                            }
+                            else
+                                if (center.y < staffs[staffNumber].lines[3].y - offset) {
+                                    Note note;
+                                    note.name = A;
+                                    note.octave = 4;
+                                    note.duration = quarter;
+                                    note.position = 0;
+                                    notes.push_back(note);
+                                }
+                                else
+                                    if (center.y < staffs[staffNumber].lines[3].y + offset) {
+                                        Note note;
+                                        note.name = G;
+                                        note.octave = 4;
+                                        note.duration = quarter;
+                                        note.position = 0;
+                                        notes.push_back(note);
+                                    }
+                                    else
+                                        if (center.y < staffs[staffNumber].lines[4].y - offset) {
+                                            Note note;
+                                            note.name = F;
+                                            note.octave = 4;
+                                            note.duration = quarter;
+                                            note.position = 0;
+                                            notes.push_back(note);
+                                        }
+                                        else
+                                            if (center.y < staffs[staffNumber].lines[4].y + offset) {
+                                                Note note;
+                                                note.name = E;
+                                                note.octave = 4;
+                                                note.duration = quarter;
+                                                note.position = 0;
+                                                notes.push_back(note);
+                                            }
+                                            else
+                                                if (center.y > staffs[staffNumber].lines[4].y + (staffs[staffNumber].lines[4].y - staffs[staffNumber].lines[3].y - offset)) {
+                                                    Note note;
+                                                    note.name = C;
+                                                    note.octave = 4;
+                                                    note.duration = quarter;
+                                                    note.position = 0;
+                                                    notes.push_back(note);
+                                                }
+                                                else
+                                                {
+                                                    Note note;
+                                                    note.name = D;
+                                                    note.octave = 4;
+                                                    note.duration = quarter;
+                                                    note.position = 0;
+                                                    notes.push_back(note);
+                                                }
+        //cout << staffNumber << endl;
+    }
 
     for (int i = 0; i < notes.size(); i++) {
-		cout << "Note " << i << ": " << notes[i].name << endl;
-	}
+        cout << "Note " << i << ": " << notes[i].name << endl;
+    }
 
     return notes;
 }
@@ -578,7 +669,7 @@ void binaryImage(Mat image, Mat& binaryImage) {
 
     for (int i = 0; i < image.rows; i++) {
         for (int j = 0; j < image.cols; j++) {
-            if (image.at<uchar>(i, j) < 128)
+            if (image.at<uchar>(i, j) < 150)
                 binaryImage.at<uchar>(i, j) = 0;
             else
                 binaryImage.at<uchar>(i, j) = 255;
@@ -597,16 +688,16 @@ void adjustNoteTails(Mat& binaryImage, int threshold, int adjustment) {
     for (int j = 0; j < binaryImage.cols; ++j) {
         if (verticalProjection[j] > threshold) {
             //cout << "Adjusting pixel values to the right at column " << j << endl;
-            
+
             for (int i = 0; i < binaryImage.rows; ++i) {
                 if (binaryImage.at<uchar>(i, j) == 0) {
                     for (int k = 1; k <= adjustment; ++k) {
                         if (j + k < binaryImage.cols) {
-							binaryImage.at<uchar>(i, j + k) = 0;
-						}
-					}
-				}
-			}
+                            binaryImage.at<uchar>(i, j + k) = 0;
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -645,9 +736,8 @@ void writeNotesAndDurationsToFile(const vector<Note>& notes) {
     cout << "Notes and durations written to file successfully." << endl;
 }
 
-vector<pair<int, int>> calculateAreaForDuration(Mat labels, Mat labelsNotes) {
-    vector<pair<int, int>> areas;
-    for (int label = 1; label <= newLabel; ++label) {
+void calculateAreaForDuration(Mat labels, Mat labelsNotes) {
+    for (int label = 1; label <= newlabel1; ++label) {
         int area = 0;
 
         // Check if any part of labelsNotes overlaps with the current label in labels
@@ -662,24 +752,24 @@ vector<pair<int, int>> calculateAreaForDuration(Mat labels, Mat labelsNotes) {
             }
         }
 
-        areas.push_back({ label, area });
+        cout << "Area for label outside for " << label << ": " << area << endl;
 
         if (overlap) {
             cout << "Area for label " << label << " overlapped with notes: " << area << endl;
-            if ((area > 200 || area < 15) || (area > 90 && area < 100)) {
-                cout << "Adjusting pixel values for label " << label << endl;
-				for (int i = 0; i < labels.rows; ++i) {
-					for (int j = 0; j < labels.cols; ++j) {
-						if (labels.at<int>(i, j) == label) {
-							labels.at<int>(i, j) = 0;
-						}
-					}
-				}
-			}
+            if (area < 25 || area > 50) {
+                //cout << "Adjusting pixel values for label " << label << endl;
+                for (int i = 0; i < labels.rows; ++i) {
+                    for (int j = 0; j < labels.cols; ++j) {
+                        if (labels.at<int>(i, j) == label) {
+                            labels.at<int>(i, j) = 0;
+                        }
+                    }
+                }
+            }
         }
         else {
-            cout << "No overlap found for label " << label << endl;
-            
+            //cout << "No overlap found for label " << label << endl;
+
             for (int i = 0; i < labels.rows; ++i) {
                 for (int j = 0; j < labels.cols; ++j) {
                     if (labels.at<int>(i, j) == label) {
@@ -689,8 +779,6 @@ vector<pair<int, int>> calculateAreaForDuration(Mat labels, Mat labelsNotes) {
             }
         }
     }
-
-    return areas;
 }
 
 vector<Note> identifyDurations(const Mat& labels, const vector<Staff>& staffs, Mat image, const Mat& labelsNotes, vector<Note> notes) {
@@ -698,15 +786,28 @@ vector<Note> identifyDurations(const Mat& labels, const vector<Staff>& staffs, M
     vector<Duration> durations;
     vector<pair<Point, int>> sortedLabels;
 
-    vector<pair<int, int>> areas = calculateAreaForDuration(labels, labelsNotes);
-    cout << "am ajuns aici" << endl;
-    sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image);
+    calculateAreaForDuration(labels, labelsNotes);
+
+    sortLabelsByCenterOfMass(labels, staffs, sortedLabels, image, newlabel1);
 
     //extract sorted labels
     vector<int> extractedLabels;
-    cout << sortedLabels.size() << endl;
+    //cout << sortedLabels.size() << endl;
     for (const auto& pair : sortedLabels) {
         extractedLabels.push_back(pair.second);
+    }
+
+    vector<pair<int, int>> areas;
+    for (int i = 0; i < extractedLabels.size(); i++) {
+        int area = 0;
+        for (int j = 0; j < labels.rows; j++) {
+            for (int k = 0; k < labels.cols; k++) {
+                if (labels.at<int>(j, k) == extractedLabels[i]) {
+                    area++;
+                }
+            }
+        }
+        areas.push_back({ extractedLabels[i], area });
     }
 
     // Display the sorted labels
@@ -718,122 +819,34 @@ vector<Note> identifyDurations(const Mat& labels, const vector<Staff>& staffs, M
         waitKey(0);
     }
 
-    auto isWhite = [](int pixel) { return pixel == 255; };
-
-    int tolerance = 10;
-
-    // for (int i = 0; i < extractedLabels.size(); i++) {
-    //     int label = extractedLabels[i];
-
-    //     int y = 0;
-
-    //     for (int iN = 0; iN < labelsNotes.rows; iN++) {
-    //         for (int jN = 0; jN < labelsNotes.cols; jN++) {
-    //             if (labelsNotes.at<int>(iN, jN) == label) {
-    //                 y = jN;
-             //	}
-             //}
-    //     }
-
-    //     circle(image, Point(label, y), 3, Scalar(0, 255, 0), FILLED);
-    //     imshow("Detected Labels", image);
-    //     waitKey(0);
-
-    //     int upCount = 0;
-    //     int j = y - 1;
-    //     while (j >= 0 && !isWhite(labels.at<int>(j, label))) {
-    //         upCount++;
-    //         j--;
-    //     }
-
-    //     int downCount = 0;
-    //     j = y + 1;
-    //     while (j < labels.rows && !isWhite(labels.at<int>(j, label))) {
-    //         downCount++;
-    //         j++;
-    //     }
-
-    //     int rightCount = 0;
-    //     j = label + 1; 
-    //     bool firstWhitePixelFound = false;
-    //     while (j < labels.cols && (!firstWhitePixelFound || !isWhite(labels.at<int>(y, j)))) {
-    //         if (!firstWhitePixelFound && isWhite(labels.at<int>(y, j))) {
-    //             firstWhitePixelFound = true;
-    //             break;
-    //         }
-    //         if (firstWhitePixelFound) {
-    //             rightCount++;
-    //         }
-    //         j++; // Increment the column index
-    //     }
-
-    //     cout << "Up count: " << upCount << ", Down count: " << downCount << ", Right count: " << rightCount << "Label value" << labels.at<int>(j, label) << endl;
-    //     circle(image, Point(label, y), 3, Scalar(0, 255, 0), FILLED);
-    //     imshow("Detected Labels", image);
-    //     waitKey(0);
-
-    //     if (upCount > tolerance) {
-    //         if (rightCount > tolerance) {
-    //             int thresholdColumns = 10;
-    //             bool hasNonWhiteInThreshold = false;
-    //             for (int k = 1; k <= thresholdColumns; ++k) {
-    //                 if (!isWhite(labels.at<int>(y + k, label))) {
-    //                     hasNonWhiteInThreshold = true;
-    //                     break;
-    //                 }
-    //             }
-
-    //             if (hasNonWhiteInThreshold) {
-    //                 durations.push_back(eighth);
-    //             }
-    //             else {
-    //                 durations.push_back(quarter);
-    //             }
-    //         }
-    //         else {
-    //             durations.push_back(quarter);
-    //         }
-    //     }
-    //     else {
-    //         durations.push_back(quarter);
-    //     }
-
-    // }
-
-    // for (int i = 0; i < durations.size(); i++) {
-    //     cout << "Duration " << i << ": " << durations[i] << endl;
-    // }
-
-    cout << "Areas size: " << areas.size() << endl;
-
-
     for (int i = 0; i < areas.size(); i++) {
-        cout << "Area " << i << ": " << areas[i].second << endl;
+        //cout << "Area " << i << ": " << areas[i].second << endl;
         if (areas[i].second != 0) {
-            if (areas[i].second > 25 && areas[i].second < 45) {
-                for (int label = 0; label < notesClone.size(); label++) {
-                    if (areas[i].first == label) {
-						notesClone[label].duration = quarter;
-						durations.push_back(quarter);
-					}
-                }
+            cout << "Area " << i << ": " << areas[i].second << endl;
+            if (areas[i].second < 80) {
+                //for (int label = 0; label < notesClone.size(); label++) {
+                //    if (areas[i].first == label) {
+                notesClone[i].duration = quarter;
+                durations.push_back(quarter);
+                //}
+            //}
             }
             else {
-                for (int label = 0; label < notesClone.size(); label++) {
-                    if (areas[i].first == label) {
-                        notesClone[label].duration = eighth;
-                        durations.push_back(eighth);
-                    }
-                }
+                // for (int label = 0; label < notesClone.size(); label++) {
+                   //  if (areas[i].first == label) {
+                notesClone[i].duration = eighth;
+                durations.push_back(eighth);
+                //  }
+             // }
             }
         }
-	}
-
-    for (int i = 0; i < durations.size(); i++) {
-		cout << "Duration " << i << ": " << durations[i] << endl;
     }
 
-	return notesClone;
+    for (int i = 0; i < notesClone.size(); i++) {
+        cout << "Duration " << i << ": " << notesClone[i].duration << endl;
+    }
+
+    return notesClone;
 }
 
 int main() {
@@ -844,6 +857,9 @@ int main() {
 
     binaryImage(image1, image);
 
+    imshow("Binary", image);
+    waitKey(0);
+
     if (image.empty()) {
         cout << "Could not open or find the image" << endl;
         return -1;
@@ -852,17 +868,17 @@ int main() {
     // Detect portatives
     vector<Staff> staffs = detectStaffs(image, 1);
 
-    imshow("Detected Portatives", image);
+    Mat imageDur = image.clone();
 
     Mat_<uchar> strel3(3, 3);
     strel3(0, 0) = 0;
-    strel3(0, 1) = 0;
-    strel3(0, 2) = 0;
-    strel3(1, 0) = 1;
-    strel3(1, 1) = 1;
-    strel3(1, 2) = 1;
+    strel3(1, 0) = 0;
     strel3(2, 0) = 0;
+    strel3(0, 1) = 0;
+    strel3(1, 1) = 0;
     strel3(2, 1) = 0;
+    strel3(0, 2) = 0;
+    strel3(1, 2) = 0;
     strel3(2, 2) = 0;
     Mat clonee = erosionLab7(image, strel3);
     imshow("Eroded Portative Clone", clonee);
@@ -872,46 +888,71 @@ int main() {
 
     Mat_<uchar> strel1(2, 2);
     strel1.setTo(0);
-    Mat erodedPortative = openingLab7(image, strel1);
+    Mat erodedPortative = openingLab7(clonee, strel1);
 
-    imshow("Eroded Portative", erodedPortative);
+    imshow("Eroded Portative", clonee);
     waitKey(0);
 
-    Mat dilatedSrc;
-    Mat_<uchar> strel2(5, 5);
-    strel2.setTo(0);
-    dilatedSrc = closingLab7(erodedPortative, strel2);
+    //Mat dilatedSrc, dilatedSrc1;
+    //Mat_<uchar> strel2(5, 5);
+    //strel2.setTo(0);
+    //dilatedSrc1 = closingLab7(clonee, strel2);
+    //dilatedSrc = dilationLab7(dilatedSrc1, strel2);
 
-    imshow("Dilated Portative", dilatedSrc);
-    waitKey(0);
+    //imshow("Dilated Portative", dilatedSrc);
+    //waitKey(0);
 
-    Mat labels = connectedLabeling(clonee);
+    Mat labels = connectedLabeling(erodedPortative);
 
-    Mat colorImg(clonee.rows, clonee.cols, CV_8UC3, Scalar(255, 255, 255));
-    for (int i = 0; i < clonee.rows; i++) {
-        for (int j = 0; j < clonee.cols; j++) {
-            if (labels.at<int>(i, j) != 0) {
-				colorImg.at<Vec3b>(i, j) = Vec3b(rand() % 256, rand() % 256, rand() % 256);
-			}
-		}
-	}
-
-    vector<Note> notes = identifyNotes(labels, staffs, colorImg);
-
-    Mat labelsDur = connectedLabeling(dilatedSrc);
-
-    cout << "Connected labeling for durations" << endl;
-
-    Mat colorImgForDurations(dilatedSrc.rows, dilatedSrc.cols, CV_8UC3, Scalar(255, 255, 255));
-    for (int i = 0; i < dilatedSrc.rows; i++) {
-        for (int j = 0; j < dilatedSrc.cols; j++) {
-            if (labelsDur.at<int>(i, j) != 0) {
-                colorImgForDurations.at<Vec3b>(i, j) = Vec3b(rand() % 256, rand() % 256, rand() % 256);
+    std::default_random_engine gen;
+    std::uniform_int_distribution<int> d(0, 255);
+    Mat colorImg(erodedPortative.rows, erodedPortative.cols, CV_8UC3, Scalar(255, 255, 255));
+    for (int k = 2; k <= newLabel; k++) {
+        Vec3b color = Vec3b(rand() % 256, rand() % 256, rand() % 256);
+        for (int i = 1; i < erodedPortative.rows - 1; i++) {
+            for (int j = 1; j < erodedPortative.cols - 1; j++) {
+                if (labels.at<int>(i, j) == k)
+                    colorImg.at<Vec3b>(i, j) = color;
             }
         }
     }
 
-    vector<Note> durations = identifyDurations(labelsDur, staffs, colorImgForDurations, labels, notes);
+    imshow("color", colorImg);
+    waitKey(0);
+
+    vector<Note> notes = identifyNotes(labels, staffs, colorImg);
+
+    Mat_<uchar> strel31(3, 1);
+    strel31(0, 0) = 0;
+    strel31(1, 0) = 0;
+    strel31(2, 0) = 0;
+    Mat clonee1 = erosionLab7(imageDur, strel31);
+    imshow("Eroded Portative Clone For Duration", clonee1);
+    waitKey(0);
+
+    //adjustNoteTails(clonee1, 35, 2);
+    //imshow("Adjusted Note Tails", clonee1);
+    //waitKey(0);
+
+    Mat labelsDur = connectedLabelingDur(clonee1);
+
+    Mat colorImg1(clonee1.rows, clonee1.cols, CV_8UC3, Scalar(255, 255, 255));
+    for (int k = 2; k <= newlabel1; k++) {
+        Vec3b color = Vec3b(rand() % 256, rand() % 256, rand() % 256);
+        for (int i = 1; i < clonee1.rows - 1; i++) {
+            for (int j = 1; j < clonee1.cols - 1; j++) {
+                if (labelsDur.at<int>(i, j) == k)
+                    colorImg1.at<Vec3b>(i, j) = color;
+            }
+        }
+    }
+
+    imshow("color duration", colorImg1);
+    waitKey(0);
+
+    vector<Note> durations = identifyDurations(labelsDur, staffs, colorImg1, labels, notes);
+
+    notes = durations;
 
     writeNotesAndDurationsToFile(notes);
 
